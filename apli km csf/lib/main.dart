@@ -37,6 +37,8 @@ class Deplacement {
     this.montant = 0.0,
     this.type = 'trajet',
   });
+
+  int get date_year => date.year;
 }
 
 class TrajetType {
@@ -323,6 +325,10 @@ class _HomePageState extends State<HomePage> {
         .fold<double>(0.0, (sum, d) => sum + d.montant);
   }
 
+  List<Deplacement> get _filteredItems {
+    return _items.where((item) => item.date_year == _selectedYear).toList();
+  }
+
   Future<void> _exportAndShareExcel() async {
     if (_items.isEmpty) return;
 
@@ -402,8 +408,8 @@ class _HomePageState extends State<HomePage> {
     }
 
     // Données
-    for (final d in _items) {
-      if (d.type == 'frais') {
+    for (final d in _items.where((item) => item.date_year == year)) {
+    if (d.type == 'frais') {
         sheet.appendRow([
           _dateFormat.format(d.date),
           d.raison,
@@ -539,9 +545,9 @@ class _HomePageState extends State<HomePage> {
                     ),
                   )
                 : ListView.builder(
-                    itemCount: _items.length,
-                    itemBuilder: (_, index) {
-                      final d = _items[index];
+                    itemCount: _filteredItems.length,
+            itemBuilder: (_, index) {
+              final d = _filteredItems[index];
                       return Card(
                         child: ListTile(
                           leading: CircleAvatar(
