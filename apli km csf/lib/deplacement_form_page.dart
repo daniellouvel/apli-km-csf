@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'main.dart';
+import 'main.dart'; // pour Deplacement et TrajetType
 
 class DeplacementFormPage extends StatefulWidget {
   final List<TrajetType> trajetsConnus;
@@ -18,164 +18,333 @@ class DeplacementFormPage extends StatefulWidget {
 }
 
 class _DeplacementFormPageState extends State<DeplacementFormPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _raisonController = TextEditingController();
-  final _kmController = TextEditingController();
-  DateTime _date = DateTime.now();
+  // Trajet
+  final _formKeyTrajet = GlobalKey<FormState>();
+  final _dateControllerTrajet = TextEditingController();
+  final _raisonControllerTrajet = TextEditingController();
+  final _kmControllerTrajet = TextEditingController();
+  DateTime _selectedDateTrajet = DateTime.now();
+
+  // Frais
+  final _formKeyFrais = GlobalKey<FormState>();
+  final _dateControllerFrais = TextEditingController();
+  final _raisonControllerFrais = TextEditingController();
+  final _montantControllerFrais = TextEditingController();
+  DateTime _selectedDateFrais = DateTime.now();
+
   final _dateFormat = DateFormat('yyyy-MM-dd');
 
-  TrajetType? _trajetChoisi;
+  int _selectedTabIndex = 0; // 0 = Trajet, 1 = Frais
+
+  @override
+  void initState() {
+    super.initState();
+    _dateControllerTrajet.text = _dateFormat.format(_selectedDateTrajet);
+    _dateControllerFrais.text = _dateFormat.format(_selectedDateFrais);
+  }
 
   @override
   void dispose() {
-    _raisonController.dispose();
-    _kmController.dispose();
+    _dateControllerTrajet.dispose();
+    _raisonControllerTrajet.dispose();
+    _kmControllerTrajet.dispose();
+
+    _dateControllerFrais.dispose();
+    _raisonControllerFrais.dispose();
+    _montantControllerFrais.dispose();
     super.dispose();
   }
 
-  Future<void> _pickDate() async {
+  Future<void> _pickDateTrajet() async {
     final picked = await showDatePicker(
       context: context,
-      initialDate: _date,
-      firstDate: DateTime(2000),
+      initialDate: _selectedDateTrajet,
+      firstDate: DateTime(2020),
       lastDate: DateTime(2100),
     );
     if (picked != null) {
       setState(() {
-        _date = picked;
+        _selectedDateTrajet = picked;
+        _dateControllerTrajet.text = _dateFormat.format(picked);
       });
     }
   }
 
-  void _onTrajetSelected(TrajetType? value) {
-    setState(() {
-      _trajetChoisi = value;
-      if (value != null) {
-        _raisonController.text = value.raison;
-        _kmController.text = value.kmDefaut.toStringAsFixed(2);
-      }
-    });
+  Future<void> _pickDateFrais() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDateFrais,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDateFrais = picked;
+        _dateControllerFrais.text = _dateFormat.format(picked);
+      });
+    }
   }
 
-  void _save() {
-    if (!_formKey.currentState!.validate()) return;
+  void _submitTrajet() {
+    if (!_formKeyTrajet.currentState!.validate()) return;
 
-    final km = double.tryParse(_kmController.text.replaceAll(',', '.'));
-    if (km == null) return;
-
+    final km =
+        double.tryParse(_kmControllerTrajet.text.replaceAll(',', '.')) ?? 0.0;
     final dep = Deplacement(
-      date: _date,
-      raison: _raisonController.text.trim(),
+      date: _selectedDateTrajet,
+      raison: _raisonControllerTrajet.text.trim(),
       km: km,
+      type: 'trajet',
+      montant: 0.0,
     );
+    Navigator.of(context).pop(dep);
+  }
 
+  void _submitFrais() {
+    if (!_formKeyFrais.currentState!.validate()) return;
+
+    final montant =
+        double.tryParse(_montantControllerFrais.text.replaceAll(',', '.')) ??
+            0.0;
+    final dep = Deplacement(
+      date: _selectedDateFrais,
+      raison: _raisonControllerFrais.text.trim(),
+      km: 0.0,
+      type: 'frais',
+      montant: montant,
+    );
     Navigator.of(context).pop(dep);
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasTrajets = widget.trajetsConnus.isNotEmpty;
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nouveau déplacement'),
+        title: const Text('Nouveau mouvement'),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Card(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.calendar_today, color: scheme.primary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Date : ${_dateFormat.format(_date)}',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _pickDate,
-                        child: const Text('Changer'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (hasTrajets) ...[
-                    DropdownButtonFormField<TrajetType>(
-                      decoration: const InputDecoration(
-                        labelText: 'Trajet (pré-rempli)',
-                        border: OutlineInputBorder(),
-                      ),
-                      value: _trajetChoisi,
-                      items: widget.trajetsConnus
-                          .map(
-                            (t) => DropdownMenuItem<TrajetType>(
-                              value: t,
-                              child: Text('${t.raison} (${t.kmDefaut} km)'),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: _onTrajetSelected,
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  TextFormField(
-                    controller: _raisonController,
-                    decoration: const InputDecoration(
-                      labelText: 'Raison',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.route),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Indique une raison';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _kmController,
-                    decoration: const InputDecoration(
-                      labelText: 'Kilomètres',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.speed),
-                    ),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return 'Indique le nombre de km';
-                      }
-                      if (double.tryParse(value.replaceAll(',', '.')) == null) {
-                        return 'Nombre invalide';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _save,
-                      icon: const Icon(Icons.check),
-                      label: const Text('Enregistrer'),
-                    ),
-                  ),
-                ],
+      body: Column(
+        children: [
+          const SizedBox(height: 8),
+          ToggleButtons(
+            isSelected: [
+              _selectedTabIndex == 0,
+              _selectedTabIndex == 1,
+            ],
+            onPressed: (index) {
+              setState(() {
+                _selectedTabIndex = index;
+              });
+            },
+            borderRadius: BorderRadius.circular(8),
+            selectedColor: scheme.onPrimary,
+            fillColor: scheme.primary,
+            children: const [
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text('Trajet'),
               ),
+              Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16.0),
+                child: Text('Frais'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _selectedTabIndex == 0
+                  ? _buildTrajetForm(context)
+                  : _buildFraisForm(context),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // -------- Formulaire Trajet avec pré-remplissage --------
+
+  Widget _buildTrajetForm(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasTrajets = widget.trajetsConnus.isNotEmpty;
+
+    return SingleChildScrollView(
+      key: const ValueKey('trajet'),
+      padding: const EdgeInsets.all(16),
+      child: Form(
+        key: _formKeyTrajet,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Trajet au kilomètre',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _dateControllerTrajet,
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: 'Date',
+                prefixIcon: Icon(Icons.calendar_today),
+              ),
+              onTap: _pickDateTrajet,
+            ),
+            const SizedBox(height: 16),
+            if (hasTrajets) ...[
+              DropdownButtonFormField<TrajetType>(
+                decoration: const InputDecoration(
+                  labelText: 'Trajet (pré-rempli)',
+                  border: OutlineInputBorder(),
+                ),
+                items: widget.trajetsConnus
+                    .map(
+                      (t) => DropdownMenuItem<TrajetType>(
+                        value: t,
+                        child: Text('${t.raison} (${t.kmDefaut} km)'),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) return;
+                  _raisonControllerTrajet.text = value.raison;
+                  _kmControllerTrajet.text = value.kmDefaut.toStringAsFixed(2);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+            TextFormField(
+              controller: _raisonControllerTrajet,
+              decoration: const InputDecoration(
+                labelText: 'Raison / libellé',
+                prefixIcon: Icon(Icons.directions_car),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Veuillez saisir une raison';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _kmControllerTrajet,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Kilomètres',
+                prefixIcon: Icon(Icons.straighten),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Veuillez saisir le nombre de kilomètres';
+                }
+                final km = double.tryParse(value.replaceAll(',', '.'));
+                if (km == null || km <= 0) {
+                  return 'Kilomètres invalides';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.check),
+                label: const Text('Enregistrer le trajet'),
+                onPressed: _submitTrajet,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // -------- Formulaire Frais --------
+
+  Widget _buildFraisForm(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return SingleChildScrollView(
+      key: const ValueKey('frais'),
+      padding: const EdgeInsets.all(16),
+      child: Form(
+        key: _formKeyFrais,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Frais (montant direct)',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _dateControllerFrais,
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: 'Date',
+                prefixIcon: Icon(Icons.calendar_today),
+              ),
+              onTap: _pickDateFrais,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _raisonControllerFrais,
+              decoration: const InputDecoration(
+                labelText: 'Libellé du frais',
+                prefixIcon: Icon(Icons.receipt_long),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Veuillez saisir un libellé';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _montantControllerFrais,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(
+                labelText: 'Montant à défiscaliser (€)',
+                prefixIcon: Icon(Icons.euro),
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Veuillez saisir un montant';
+                }
+                final m = double.tryParse(value.replaceAll(',', '.'));
+                if (m == null || m <= 0) {
+                  return 'Montant invalide';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                icon: const Icon(Icons.check),
+                label: const Text('Enregistrer le frais'),
+                onPressed: _submitFrais,
+              ),
+            ),
+          ],
         ),
       ),
     );

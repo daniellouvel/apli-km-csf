@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:excel/excel.dart';
 import 'dart:io';
 
 import 'deplacement_form_page.dart';
@@ -14,19 +15,28 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final initialConfig = await AppStorage.loadConfig();
   final initialDeplacements = await AppStorage.loadDeplacements();
-
   runApp(MyApp(
     initialConfig: initialConfig,
     initialDeplacements: initialDeplacements,
   ));
 }
 
+// ---------- Modèles ----------
+
 class Deplacement {
   DateTime date;
   String raison;
   double km;
+  double montant; // pour les frais
+  String type; // 'trajet' ou 'frais'
 
-  Deplacement({required this.date, required this.raison, required this.km});
+  Deplacement({
+    required this.date,
+    required this.raison,
+    this.km = 0.0,
+    this.montant = 0.0,
+    this.type = 'trajet',
+  });
 }
 
 class TrajetType {
@@ -38,8 +48,8 @@ class TrajetType {
 
 class UserConfig {
   String nom;
-  String typeVehicule;
-  double puissance;
+  String typeVehicule; // 'thermique' ou 'electrique'
+  double puissance; // CV fiscaux
 
   UserConfig({
     required this.nom,
@@ -47,6 +57,101 @@ class UserConfig {
     required this.puissance,
   });
 }
+
+/// ----- BARÈME KILOMÉTRIQUE 2025 -----
+
+double calculIndemnite({
+  required String typeVehicule,
+  required double puissance,
+  required double kmAnnuels,
+}) {
+  String catPuissance;
+  if (puissance <= 3) {
+    catPuissance = '3cv';
+  } else if (puissance == 4) {
+    catPuissance = '4cv';
+  } else if (puissance == 5) {
+    catPuissance = '5cv';
+  } else if (puissance == 6) {
+    catPuissance = '6cv';
+  } else {
+    catPuissance = '7cv+';
+  }
+
+  const thermique = {
+    '3cv': {
+      '0-5000': {'a': 0.529, 'b': 0.0},
+      '5001-20000': {'a': 0.316, 'b': 1065.0},
+      '20000+': {'a': 0.370, 'b': 0.0},
+    },
+    '4cv': {
+      '0-5000': {'a': 0.606, 'b': 0.0},
+      '5001-20000': {'a': 0.340, 'b': 1330.0},
+      '20000+': {'a': 0.407, 'b': 0.0},
+    },
+    '5cv': {
+      '0-5000': {'a': 0.636, 'b': 0.0},
+      '5001-20000': {'a': 0.357, 'b': 1395.0},
+      '20000+': {'a': 0.427, 'b': 0.0},
+    },
+    '6cv': {
+      '0-5000': {'a': 0.665, 'b': 0.0},
+      '5001-20000': {'a': 0.374, 'b': 1457.0},
+      '20000+': {'a': 0.447, 'b': 0.0},
+    },
+    '7cv+': {
+      '0-5000': {'a': 0.697, 'b': 0.0},
+      '5001-20000': {'a': 0.394, 'b': 1515.0},
+      '20000+': {'a': 0.470, 'b': 0.0},
+    },
+  };
+
+  const electrique = {
+    '3cv': {
+      '0-5000': {'a': 0.635, 'b': 0.0},
+      '5001-20000': {'a': 0.379, 'b': 1278.0},
+      '20000+': {'a': 0.444, 'b': 0.0},
+    },
+    '4cv': {
+      '0-5000': {'a': 0.727, 'b': 0.0},
+      '5001-20000': {'a': 0.408, 'b': 1596.0},
+      '20000+': {'a': 0.488, 'b': 0.0},
+    },
+    '5cv': {
+      '0-5000': {'a': 0.763, 'b': 0.0},
+      '5001-20000': {'a': 0.428, 'b': 1674.0},
+      '20000+': {'a': 0.512, 'b': 0.0},
+    },
+    '6cv': {
+      '0-5000': {'a': 0.798, 'b': 0.0},
+      '5001-20000': {'a': 0.449, 'b': 1748.0},
+      '20000+': {'a': 0.536, 'b': 0.0},
+    },
+    '7cv+': {
+      '0-5000': {'a': 0.836, 'b': 0.0},
+      '5001-20000': {'a': 0.473, 'b': 1818.0},
+      '20000+': {'a': 0.564, 'b': 0.0},
+    },
+  };
+
+  final table = typeVehicule == 'electrique' ? electrique : thermique;
+  final cfg = table[catPuissance]!;
+
+  Map<String, double> coef;
+  if (kmAnnuels <= 5000) {
+    coef = cfg['0-5000']!;
+  } else if (kmAnnuels <= 20000) {
+    coef = cfg['5001-20000']!;
+  } else {
+    coef = cfg['20000+']!;
+  }
+
+  final a = coef['a']!;
+  final b = coef['b']!;
+  return a * kmAnnuels + b;
+}
+
+// ---------- Application ----------
 
 class MyApp extends StatefulWidget {
   final UserConfig? initialConfig;
@@ -86,7 +191,6 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = ColorScheme.fromSeed(seedColor: Colors.teal);
-
     return MaterialApp(
       title: 'Carnet de trajets',
       theme: ThemeData(
@@ -138,93 +242,215 @@ class _HomePageState extends State<HomePage> {
   late List<Deplacement> _items;
   final List<TrajetType> _trajets = [];
   final _dateFormat = DateFormat('yyyy-MM-dd');
+  int _selectedYear = DateTime.now().year;
 
   @override
   void initState() {
     super.initState();
     _items = List<Deplacement>.from(widget.initialDeplacements);
 
-    for (final d in _items) {
-      final existeDeja = _trajets.any(
-        (t) => t.raison == d.raison && t.kmDefaut == d.km,
-      );
+    for (final d in _items.where((e) => e.type == 'trajet')) {
+      final existeDeja =
+          _trajets.any((t) => t.raison == d.raison && t.kmDefaut == d.km);
       if (!existeDeja) {
-        _trajets.add(
-          TrajetType(raison: d.raison, kmDefaut: d.km),
-        );
+        _trajets.add(TrajetType(raison: d.raison, kmDefaut: d.km));
       }
     }
   }
 
   Future<void> _addDeplacement() async {
-    final result = await Navigator.of(context).push<Deplacement>(
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => DeplacementFormPage(
           trajetsConnus: _trajets,
         ),
       ),
     );
-    if (result != null) {
+
+    if (result != null && result is Deplacement) {
       setState(() {
         _items.add(result);
-        final existeDeja = _trajets.any(
-          (t) => t.raison == result.raison && t.kmDefaut == result.km,
-        );
-        if (!existeDeja) {
-          _trajets.add(
-            TrajetType(raison: result.raison, kmDefaut: result.km),
+        if (result.type == 'trajet') {
+          final existeDeja = _trajets.any(
+            (t) => t.raison == result.raison && t.kmDefaut == result.km,
           );
+          if (!existeDeja) {
+            _trajets.add(
+              TrajetType(raison: result.raison, kmDefaut: result.km),
+            );
+          }
         }
       });
-      AppStorage.saveDeplacements(_items);
+      await AppStorage.saveDeplacements(_items);
     }
   }
 
   Future<void> _openSettings() async {
-    final result = await Navigator.of(context).push<UserConfig>(
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SettingsPage(
           configInitiale: widget.config,
         ),
       ),
     );
-    if (result != null) {
+
+    if (result != null && result is UserConfig) {
       widget.onEditConfig(result);
     }
   }
 
-  Future<void> _exportAndShareCsv() async {
+  double _totalKmForYear(int year) {
+    return _items
+        .where((d) => d.date.year == year && d.type == 'trajet')
+        .fold<double>(0.0, (sum, d) => sum + d.km);
+  }
+
+  double _indemniteForYear(int year) {
+    final cfg = widget.config;
+    if (cfg.puissance <= 0) return 0;
+    final km = _totalKmForYear(year);
+    if (km == 0) return 0;
+    return calculIndemnite(
+      typeVehicule: cfg.typeVehicule,
+      puissance: cfg.puissance,
+      kmAnnuels: km,
+    );
+  }
+
+  double _totalFraisForYear(int year) {
+    return _items
+        .where((d) => d.date.year == year && d.type == 'frais')
+        .fold<double>(0.0, (sum, d) => sum + d.montant);
+  }
+
+  Future<void> _exportAndShareExcel() async {
     if (_items.isEmpty) return;
 
-    List<String> header = ['date', 'raison', 'kilometres'];
-    List<List<String>> rows = _items
-        .map((d) => [
-              _dateFormat.format(d.date),
-              d.raison,
-              d.km.toStringAsFixed(2),
-            ])
-        .toList();
+    final year = _selectedYear;
+    final totalKmTrajets = _totalKmForYear(year);
+    final indemniteKm = _indemniteForYear(year);
+    final totalFrais = _totalFraisForYear(year);
+    final totalGlobal = indemniteKm + totalFrais;
 
-    final dir = await getTemporaryDirectory();
-    final filePath = '${dir.path}/deplacements.csv';
-    final file = File(filePath);
+    final prixParKm = totalKmTrajets > 0 ? indemniteKm / totalKmTrajets : 0.0;
 
-    final buffer = StringBuffer();
+    final excel = Excel.createExcel();
+    final defaultSheetName = excel.getDefaultSheet()!;
+    final sheet = excel[defaultSheetName]!;
 
-    buffer.writeln('# Nom: ${widget.config.nom}');
-    buffer.writeln('# Véhicule: ${widget.config.typeVehicule}');
-    buffer.writeln('# Puissance: ${widget.config.puissance}');
-    buffer.writeln(header.join(';'));
+    // Styles
+    final titleStyle = CellStyle(
+      bold: true,
+      fontSize: 14,
+    );
+    final infoStyle = CellStyle(
+      fontSize: 12,
+    );
+    final headerStyle = CellStyle(
+      bold: true,
+      backgroundColorHex: 'FFD9D9D9',
+      horizontalAlign: HorizontalAlign.Center,
+    );
+    final numberStyle = CellStyle(
+      fontSize: 12,
+      horizontalAlign: HorizontalAlign.Right,
+    );
 
-    for (var r in rows) {
-      buffer.writeln(r.join(';'));
+    // Titre
+    sheet.appendRow(['Carnet de trajets et frais']);
+    sheet.cell(CellIndex.indexByString('A1')).cellStyle = titleStyle;
+
+    // Infos
+    final infos = [
+      'Nom : ${widget.config.nom}',
+      'Véhicule : ${widget.config.typeVehicule}',
+      'Puissance : ${widget.config.puissance}',
+      'Année de calcul : $year',
+      'Total km trajets : ${totalKmTrajets.toStringAsFixed(2)}',
+      'Indemnité trajets : ${indemniteKm.toStringAsFixed(2)} €',
+      'Total frais : ${totalFrais.toStringAsFixed(2)} €',
+      'Total à défiscaliser : ${totalGlobal.toStringAsFixed(2)} €',
+      'Taux moyen trajet : ${prixParKm.toStringAsFixed(4)} €/km',
+    ];
+    for (var i = 0; i < infos.length; i++) {
+      sheet.appendRow([infos[i]]);
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
+          .cellStyle = infoStyle;
     }
-    await file.writeAsString(buffer.toString());
+
+    // Ligne vide
+    sheet.appendRow(['']);
+
+    // Entête du tableau
+    final headers = [
+      'Date',
+      'Libellé',
+      'Type',
+      'Kilomètres',
+      'Taux €/km',
+      'Montant à défiscaliser',
+    ];
+    sheet.appendRow(headers);
+
+    final headerRowIndex = infos.length + 2;
+    for (var col = 0; col < headers.length; col++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(
+              columnIndex: col, rowIndex: headerRowIndex))
+          .cellStyle = headerStyle;
+    }
+
+    // Données
+    for (final d in _items) {
+      if (d.type == 'frais') {
+        sheet.appendRow([
+          _dateFormat.format(d.date),
+          d.raison,
+          d.type,
+          '',
+          '',
+          d.montant,
+        ]);
+      } else {
+        final montantLigne = d.km * prixParKm;
+        sheet.appendRow([
+          _dateFormat.format(d.date),
+          d.raison,
+          d.type,
+          d.km,
+          prixParKm,
+          montantLigne,
+        ]);
+      }
+    }
+
+    // Alignement à droite sur les colonnes numériques (D, E, F)
+    final lastRow = sheet.maxRows;
+    for (var row = headerRowIndex + 1; row < lastRow; row++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row))
+          .cellStyle = numberStyle;
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: row))
+          .cellStyle = numberStyle;
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: row))
+          .cellStyle = numberStyle;
+    }
+
+    // Sauvegarde
+    final dir = await getTemporaryDirectory();
+    final filePath = '${dir.path}/deplacements.xlsx';
+    final bytes = excel.encode();
+    if (bytes == null) return;
+    final file = File(filePath);
+    await file.writeAsBytes(bytes, flush: true);
 
     await Share.shareXFiles(
       [XFile(filePath)],
-      text: 'Liste de mes déplacements',
-      subject: 'Déplacements',
+      text: 'Liste de mes déplacements et frais',
+      subject: 'Déplacements et montants',
     );
   }
 
@@ -243,7 +469,7 @@ class _HomePageState extends State<HomePage> {
           ),
           IconButton(
             icon: const Icon(Icons.ios_share),
-            onPressed: _exportAndShareCsv,
+            onPressed: _exportAndShareExcel,
           ),
         ],
       ),
@@ -267,11 +493,46 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
           ],
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+            child: Row(
+              children: [
+                const Text('Année :'),
+                const SizedBox(width: 8),
+                DropdownButton<int>(
+                  value: _selectedYear,
+                  items: List.generate(5, (i) {
+                    final year = DateTime.now().year - i;
+                    return DropdownMenuItem(
+                      value: year,
+                      child: Text(year.toString()),
+                    );
+                  }),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() {
+                      _selectedYear = value;
+                    });
+                  },
+                ),
+                const Spacer(),
+                Text(
+                  '${_totalKmForYear(_selectedYear).toStringAsFixed(0)} km - '
+                  '${_indemniteForYear(_selectedYear).toStringAsFixed(0)} € trajets',
+                  style: TextStyle(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
           Expanded(
             child: _items.isEmpty
                 ? Center(
                     child: Text(
-                      'Aucun déplacement pour l’instant',
+                      "Aucun déplacement pour l'instant",
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -284,10 +545,14 @@ class _HomePageState extends State<HomePage> {
                       return Card(
                         child: ListTile(
                           leading: CircleAvatar(
-                            backgroundColor: scheme.primary,
+                            backgroundColor: d.type == 'trajet'
+                                ? scheme.primary
+                                : scheme.secondary,
                             foregroundColor: scheme.onPrimary,
                             child: Text(
-                              d.km.toStringAsFixed(0),
+                              d.type == 'trajet'
+                                  ? d.km.toStringAsFixed(0)
+                                  : '€',
                               style: const TextStyle(fontSize: 12),
                             ),
                           ),
@@ -298,10 +563,12 @@ class _HomePageState extends State<HomePage> {
                             ),
                           ),
                           subtitle: Text(
-                            _dateFormat.format(d.date),
+                            '${_dateFormat.format(d.date)} • ${d.type}',
                           ),
                           trailing: Text(
-                            '${d.km.toStringAsFixed(1)} km',
+                            d.type == 'trajet'
+                                ? '${d.km.toStringAsFixed(1)} km'
+                                : '${d.montant.toStringAsFixed(2)} €',
                             style: TextStyle(
                               color: scheme.secondary,
                               fontWeight: FontWeight.w600,

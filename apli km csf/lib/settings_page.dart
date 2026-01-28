@@ -1,7 +1,6 @@
 // FICHIER : lib/settings_page.dart
 
 import 'package:flutter/material.dart';
-
 import 'main.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -19,38 +18,46 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nomController;
-  late TextEditingController _puissanceController;
+
   String _typeVehicule = 'thermique';
+  double _puissance = 0; // valeur stockée (3,4,5,6,7)
 
   @override
   void initState() {
     super.initState();
     _nomController = TextEditingController(text: widget.configInitiale.nom);
-    _puissanceController = TextEditingController(
-      text: widget.configInitiale.puissance == 0
-          ? ''
-          : widget.configInitiale.puissance.toString(),
-    );
     _typeVehicule = widget.configInitiale.typeVehicule;
+
+    // normalise la puissance existante vers une des valeurs de la liste
+    final p = widget.configInitiale.puissance;
+    if (p <= 0) {
+      _puissance = 0;
+    } else if (p <= 3) {
+      _puissance = 3;
+    } else if (p <= 4) {
+      _puissance = 4;
+    } else if (p <= 5) {
+      _puissance = 5;
+    } else if (p <= 6) {
+      _puissance = 6;
+    } else {
+      _puissance = 7; // on utilisera 7 = "7 CV et plus"
+    }
   }
 
   @override
   void dispose() {
     _nomController.dispose();
-    _puissanceController.dispose();
     super.dispose();
   }
 
   void _save() {
     if (!_formKey.currentState!.validate()) return;
 
-    final puissance =
-        double.tryParse(_puissanceController.text.replaceAll(',', '.')) ?? 0;
-
     final cfg = UserConfig(
       nom: _nomController.text.trim(),
       typeVehicule: _typeVehicule,
-      puissance: puissance,
+      puissance: _puissance, // déjà un double
     );
 
     Navigator.of(context).pop(cfg);
@@ -126,24 +133,50 @@ class _SettingsPageState extends State<SettingsPage> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _puissanceController,
+
+                  // NOUVEAU : liste de choix de puissance (CV)
+                  DropdownButtonFormField<double>(
                     decoration: const InputDecoration(
-                      labelText: 'Puissance (kW ou CV)',
+                      labelText: 'Puissance fiscale (CV)',
                       border: OutlineInputBorder(),
                     ),
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
+                    value: _puissance == 0 ? null : _puissance,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 3,
+                        child: Text('3 CV et moins'),
+                      ),
+                      DropdownMenuItem(
+                        value: 4,
+                        child: Text('4 CV'),
+                      ),
+                      DropdownMenuItem(
+                        value: 5,
+                        child: Text('5 CV'),
+                      ),
+                      DropdownMenuItem(
+                        value: 6,
+                        child: Text('6 CV'),
+                      ),
+                      DropdownMenuItem(
+                        value: 7,
+                        child: Text('7 CV et plus'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        _puissance = value;
+                      });
+                    },
                     validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return null;
-                      }
-                      if (double.tryParse(value.replaceAll(',', '.')) == null) {
-                        return 'Nombre invalide';
+                      if (value == null || value == 0) {
+                        return 'Choisis une puissance';
                       }
                       return null;
                     },
                   ),
+
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
