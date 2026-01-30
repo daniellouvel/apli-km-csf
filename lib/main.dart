@@ -1,5 +1,3 @@
-// FICHIER : lib/main.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -11,7 +9,7 @@ import 'deplacement_form_page.dart';
 import 'settings_page.dart';
 import 'storage.dart';
 
-const String appVersion = 'V1_0_1';
+const String appVersion = 'V1_0_2';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -388,7 +386,7 @@ class _HomePageState extends State<HomePage> {
     );
     final headerStyle = CellStyle(
       bold: true,
-      backgroundColorHex: 'FFD9D9D9',
+      backgroundColorHex: ExcelColor.fromHexString('FFD9D9D9'),
       horizontalAlign: HorizontalAlign.Center,
     );
     final numberStyle = CellStyle(
@@ -397,7 +395,9 @@ class _HomePageState extends State<HomePage> {
     );
 
     // Titre
-    sheet.appendRow(['Carnet de trajets et frais']);
+    sheet.appendRow([
+      TextCellValue('Carnet de trajets et frais'),
+    ]);
     sheet.cell(CellIndex.indexByString('A1')).cellStyle = titleStyle;
 
     // Infos
@@ -413,14 +413,18 @@ class _HomePageState extends State<HomePage> {
       'Taux moyen trajet : ${prixParKm.toStringAsFixed(4)} €/km',
     ];
     for (var i = 0; i < infos.length; i++) {
-      sheet.appendRow([infos[i]]);
+      sheet.appendRow([
+        TextCellValue(infos[i]),
+      ]);
       sheet
           .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
           .cellStyle = infoStyle;
     }
 
     // Ligne vide
-    sheet.appendRow(['']);
+    sheet.appendRow([
+      TextCellValue(''),
+    ]);
 
     // Entête du tableau
     final headers = [
@@ -431,7 +435,9 @@ class _HomePageState extends State<HomePage> {
       'Taux €/km',
       'Montant à défiscaliser',
     ];
-    sheet.appendRow(headers);
+    sheet.appendRow(
+      headers.map((h) => TextCellValue(h)).toList(),
+    );
 
     final headerRowIndex = infos.length + 2;
     for (var col = 0; col < headers.length; col++) {
@@ -445,22 +451,22 @@ class _HomePageState extends State<HomePage> {
     for (final d in lignesAnnee) {
       if (d.type == 'frais') {
         sheet.appendRow([
-          _dateFormat.format(d.date),
-          d.raison,
-          d.type,
-          '',
-          '',
-          d.montant,
+          TextCellValue(_dateFormat.format(d.date)),
+          TextCellValue(d.raison),
+          TextCellValue(d.type),
+          TextCellValue(''),
+          TextCellValue(''),
+          DoubleCellValue(d.montant),
         ]);
       } else {
         final montantLigne = d.km * prixParKm;
         sheet.appendRow([
-          _dateFormat.format(d.date),
-          d.raison,
-          d.type,
-          d.km,
-          prixParKm,
-          montantLigne,
+          TextCellValue(_dateFormat.format(d.date)),
+          TextCellValue(d.raison),
+          TextCellValue(d.type),
+          DoubleCellValue(d.km),
+          DoubleCellValue(prixParKm),
+          DoubleCellValue(montantLigne),
         ]);
       }
     }
@@ -501,7 +507,17 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mes déplacements'),
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/icons/icon_trajets.png',
+              height: 32,
+              width: 32,
+            ),
+            const SizedBox(width: 8),
+            const Text('Mes déplacements'),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),

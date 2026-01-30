@@ -1,16 +1,36 @@
 // FICHIER : lib/storage.dart
 
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'main.dart'; // pour accéder à UserConfig et Deplacement
+import 'main.dart'; // pour utiliser Deplacement et UserConfig
 
 class AppStorage {
-  static const _keyConfig = 'user_config';
-  static const _keyDeplacements = 'deplacements';
+  static const _configKey = 'user_config';
+  static const _fileName = 'deplacements.json';
 
-  /// Sauvegarde la configuration utilisateur (nom, type de véhicule, puissance)
+  /// Charge la configuration utilisateur depuis SharedPreferences
+  static Future<UserConfig?> loadConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_configKey);
+    if (jsonString == null) return null;
+
+    try {
+      final map = json.decode(jsonString) as Map<String, dynamic>;
+      return UserConfig(
+        nom: map['nom'] as String? ?? '',
+        typeVehicule: map['typeVehicule'] as String? ?? 'thermique',
+        puissance: (map['puissance'] as num?)?.toDouble() ?? 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Sauvegarde la configuration utilisateur
   static Future<void> saveConfig(UserConfig config) async {
     final prefs = await SharedPreferences.getInstance();
     final map = {
@@ -18,78 +38,37 @@ class AppStorage {
       'typeVehicule': config.typeVehicule,
       'puissance': config.puissance,
     };
-    await prefs.setString(_keyConfig, jsonEncode(map));
+    await prefs.setString(_configKey, json.encode(map));
   }
 
-  /// Charge la configuration utilisateur
-  static Future<UserConfig?> loadConfig() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString(_keyConfig);
-    if (jsonStr == null) return null;
-
-    try {
-      final map = jsonDecode(jsonStr) as Map<String, dynamic>;
-      return UserConfig(
-        nom: map['nom'] as String? ?? '',
-        typeVehicule: map['typeVehicule'] as String? ?? 'thermique',
-        puissance: (map['puissance'] as num?)?.toDouble() ?? 0.0,
-      );
-    } catch (_) {
-      return null;
-    }
+  /// Retourne le fichier JSON interne qui contient les déplacements
+  static Future<File> _getDeplacementsFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final path = '${dir.path}/$_fileName';
+    return File(path);
   }
 
-  /// Sauvegarde la liste des déplacements (trajets + frais)
-  static Future<void> saveDeplacements(List<Deplacement> items) async {
-    final prefs = await SharedPreferences.getInstance();
-
-    final list = items.map((d) {
-      return {
-        'date': d.date.toIso8601String(),
-        'raison': d.raison,
-        'km': d.km,
-        'type': d.type, // 'trajet' ou 'frais'
-        'montant': d.montant, // montant à défiscaliser pour les frais
-      };
-    }).toList();
-
-    await prefs.setString(_keyDeplacements, jsonEncode(list));
-  }
-
-  /// Charge la liste des déplacements
-  ///
-  /// Compatibilité ascendante :
-  /// - si 'type' n'existe pas, on considère que c'est un 'trajet'
-  /// - si 'montant' n'existe pas, il vaut 0.0 (on recalculera à l'export si besoin)
+  /// Charge la liste des déplacements depuis le JSON interne
   static Future<List<Deplacement>> loadDeplacements() async {
-    final prefs = await SharedPreferences.getInstance();
-    final jsonStr = prefs.getString(_keyDeplacements);
-    if (jsonStr == null) return [];
-
     try {
-      final list = jsonDecode(jsonStr) as List<dynamic>;
-      return list.map((e) {
+      final file = await _getDeplacementsFile();
+      if (!await file.exists()) {
+        return [];
+      }
+      final content = await file.readAsString();
+      if (content.trim().isEmpty) return [];
+
+      final data = json.decode(content);
+      if (data is! List) return [];
+
+      return data.map<Deplacement>((e) {
         final map = e as Map<String, dynamic>;
-
-        final dateStr = map['date'] as String? ?? '';
-        final raison = map['raison'] as String? ?? '';
-        final km = (map['km'] as num?)?.toDouble() ?? 0.0;
-        final type = map['type'] as String? ?? 'trajet';
-        final montant = (map['montant'] as num?)?.toDouble() ?? 0.0;
-
-        DateTime date;
-        try {
-          date = DateTime.parse(dateStr);
-        } catch (_) {
-          date = DateTime.now();
-        }
-
         return Deplacement(
-          date: date,
-          raison: raison,
-          km: km,
-          type: type,
-          montant: montant,
+          date: DateTime.parse(map['date'] as String),
+          raison: map['raison'] as String? ?? '',
+          km: (map['km'] as num?)?.toDouble() ?? 0.0,
+          montant: (map['montant'] as num?)?.toDouble() ?? 0.0,
+          type: map['type'] as String? ?? 'trajet',
         );
       }).toList();
     } catch (_) {
@@ -97,10 +76,22 @@ class AppStorage {
     }
   }
 
-  /// Réinitialiser toutes les données (optionnel)
-  static Future<void> clearAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_keyConfig);
-    await prefs.remove(_keyDeplacements);
+  /// Sauvegarde la liste des déplacements dans le JSON interne
+  static Future<void> saveDeplacements(List<Deplacement> items) async {
+    final file = await _getDeplacementsFile();
+    final data = items.map((d) {
+      return {
+        'date': d.date.toIso8601String(),
+        'raison': d.raison,
+        'km': d.km,
+        'montant': d.montant,
+        'type': d.type,
+      };
+    }).toList();
+
+    await file.writeAsString(
+      json.encode(data),
+      flush: true,
+    );
   }
 }
