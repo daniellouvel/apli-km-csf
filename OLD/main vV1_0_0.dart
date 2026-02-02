@@ -7,11 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:excel/excel.dart';
 import 'dart:io';
 
-import 'deplacement_form_page.dart';
-import 'settings_page.dart';
-import 'storage.dart';
-
-const String appVersion = 'V1_0_4';
+import '../lib/deplacement_form_page.dart';
+import '../lib/settings_page.dart';
+import '../lib/storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +21,26 @@ void main() async {
   ));
 }
 
+// ---------- Modèles ----------
+
+class Deplacement {
+  DateTime date;
+  String raison;
+  double km;
+  double montant; // pour les frais
+  String type; // 'trajet' ou 'frais'
+
+  Deplacement({
+    required this.date,
+    required this.raison,
+    this.km = 0.0,
+    this.montant = 0.0,
+    this.type = 'trajet',
+  });
+
+  int get date_year => date.year;
+}
+
 class TrajetType {
   String raison;
   double kmDefaut;
@@ -30,7 +48,20 @@ class TrajetType {
   TrajetType({required this.raison, required this.kmDefaut});
 }
 
+class UserConfig {
+  String nom;
+  String typeVehicule; // 'thermique' ou 'electrique'
+  double puissance; // CV fiscaux
+
+  UserConfig({
+    required this.nom,
+    required this.typeVehicule,
+    required this.puissance,
+  });
+}
+
 /// ----- BARÈME KILOMÉTRIQUE 2025 -----
+
 double calculIndemnite({
   required String typeVehicule,
   required double puissance,
@@ -107,13 +138,14 @@ double calculIndemnite({
 
   final table = typeVehicule == 'electrique' ? electrique : thermique;
   final cfg = table[catPuissance]!;
+
   Map<String, double> coef;
   if (kmAnnuels <= 5000) {
-    coef = Map<String, double>.from(cfg['0-5000']!);
+    coef = cfg['0-5000']!;
   } else if (kmAnnuels <= 20000) {
-    coef = Map<String, double>.from(cfg['5001-20000']!);
+    coef = cfg['5001-20000']!;
   } else {
-    coef = Map<String, double>.from(cfg['20000+']!);
+    coef = cfg['20000+']!;
   }
 
   final a = coef['a']!;
@@ -174,8 +206,13 @@ class _MyAppState extends State<MyApp> {
           backgroundColor: colorScheme.secondary,
           foregroundColor: colorScheme.onSecondary,
         ),
-        cardTheme: const CardThemeData(
-          margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        cardTheme: CardThemeData(
+          color: colorScheme.surface,
+          elevation: 2,
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
       home: HomePage(
@@ -213,6 +250,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _items = List<Deplacement>.from(widget.initialDeplacements);
+
     for (final d in _items.where((e) => e.type == 'trajet')) {
       final existeDeja =
           _trajets.any((t) => t.raison == d.raison && t.kmDefaut == d.km);
@@ -222,23 +260,16 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _onDataRestored() async {
-    final newItems = await AppStorage.loadDeplacements();
-    setState(() {
-      _items = newItems;
-      _selectedYear = DateTime.now().year;
-    });
-  }
-
   Future<void> _addDeplacement() async {
-    final result = await Navigator.of(context).push<Deplacement?>(
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => DeplacementFormPage(
           trajetsConnus: _trajets,
         ),
       ),
     );
-    if (result != null) {
+
+    if (result != null && result is Deplacement) {
       setState(() {
         _items.add(result);
         if (result.type == 'trajet') {
@@ -256,47 +287,16 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _editDeplacement(Deplacement original) async {
-    final index = _items.indexOf(original);
-    if (index == -1) return;
-    final result = await Navigator.of(context).push<Deplacement?>(
-      MaterialPageRoute(
-        builder: (_) => DeplacementFormPage(
-          trajetsConnus: _trajets,
-          deplacementInitial: original,
-        ),
-      ),
-    );
-    if (result != null) {
-      setState(() {
-        _items[index] = result;
-        if (result.type == 'trajet') {
-          final existeDeja = _trajets.any(
-            (t) => t.raison == result.raison && t.kmDefaut == result.km,
-          );
-          if (!existeDeja) {
-            _trajets.add(
-              TrajetType(raison: result.raison, kmDefaut: result.km),
-            );
-          }
-        }
-      });
-      await AppStorage.saveDeplacements(_items);
-    }
-  }
-
   Future<void> _openSettings() async {
-    final result = await Navigator.of(context).push<UserConfig?>(
+    final result = await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SettingsPage(
           configInitiale: widget.config,
-          deplacementsActuels: _items,
-          onConfigChange: widget.onEditConfig,
-          onDataRestored: _onDataRestored,
         ),
       ),
     );
-    if (result != null) {
+
+    if (result != null && result is UserConfig) {
       widget.onEditConfig(result);
     }
   }
@@ -304,7 +304,7 @@ class _HomePageState extends State<HomePage> {
   double _totalKmForYear(int year) {
     return _items
         .where((d) => d.date.year == year && d.type == 'trajet')
-        .fold(0.0, (sum, d) => sum + d.km);
+        .fold<double>(0.0, (sum, d) => sum + d.km);
   }
 
   double _indemniteForYear(int year) {
@@ -322,7 +322,7 @@ class _HomePageState extends State<HomePage> {
   double _totalFraisForYear(int year) {
     return _items
         .where((d) => d.date.year == year && d.type == 'frais')
-        .fold(0.0, (sum, d) => sum + d.montant);
+        .fold<double>(0.0, (sum, d) => sum + d.montant);
   }
 
   List<Deplacement> get _filteredItems {
@@ -330,20 +330,21 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _exportAndShareExcel() async {
-    final year = _selectedYear;
-    final lignesAnnee = _items.where((item) => item.date_year == year).toList();
-    if (lignesAnnee.isEmpty) return;
+    if (_items.isEmpty) return;
 
+    final year = _selectedYear;
     final totalKmTrajets = _totalKmForYear(year);
     final indemniteKm = _indemniteForYear(year);
     final totalFrais = _totalFraisForYear(year);
     final totalGlobal = indemniteKm + totalFrais;
+
     final prixParKm = totalKmTrajets > 0 ? indemniteKm / totalKmTrajets : 0.0;
 
     final excel = Excel.createExcel();
     final defaultSheetName = excel.getDefaultSheet()!;
     final sheet = excel[defaultSheetName]!;
 
+    // Styles
     final titleStyle = CellStyle(
       bold: true,
       fontSize: 14,
@@ -353,7 +354,7 @@ class _HomePageState extends State<HomePage> {
     );
     final headerStyle = CellStyle(
       bold: true,
-      backgroundColorHex: ExcelColor.fromHexString('FFD9D9D9'),
+      backgroundColorHex: 'FFD9D9D9',
       horizontalAlign: HorizontalAlign.Center,
     );
     final numberStyle = CellStyle(
@@ -362,9 +363,7 @@ class _HomePageState extends State<HomePage> {
     );
 
     // Titre
-    sheet.appendRow([
-      TextCellValue('Carnet de trajets et frais'),
-    ]);
+    sheet.appendRow(['Carnet de trajets et frais']);
     sheet.cell(CellIndex.indexByString('A1')).cellStyle = titleStyle;
 
     // Infos
@@ -380,18 +379,14 @@ class _HomePageState extends State<HomePage> {
       'Taux moyen trajet : ${prixParKm.toStringAsFixed(4)} €/km',
     ];
     for (var i = 0; i < infos.length; i++) {
-      sheet.appendRow([
-        TextCellValue(infos[i]),
-      ]);
+      sheet.appendRow([infos[i]]);
       sheet
           .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
           .cellStyle = infoStyle;
     }
 
     // Ligne vide
-    sheet.appendRow([
-      TextCellValue(''),
-    ]);
+    sheet.appendRow(['']);
 
     // Entête du tableau
     final headers = [
@@ -402,7 +397,8 @@ class _HomePageState extends State<HomePage> {
       'Taux €/km',
       'Montant à défiscaliser',
     ];
-    sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
+    sheet.appendRow(headers);
+
     final headerRowIndex = infos.length + 2;
     for (var col = 0; col < headers.length; col++) {
       sheet
@@ -412,29 +408,30 @@ class _HomePageState extends State<HomePage> {
     }
 
     // Données
-    for (final d in lignesAnnee) {
+    for (final d in _items.where((item) => item.date_year == year)) {
       if (d.type == 'frais') {
         sheet.appendRow([
-          TextCellValue(_dateFormat.format(d.date)),
-          TextCellValue(d.raison),
-          TextCellValue(d.type),
-          TextCellValue(''),
-          TextCellValue(''),
-          DoubleCellValue(d.montant),
+          _dateFormat.format(d.date),
+          d.raison,
+          d.type,
+          '',
+          '',
+          d.montant,
         ]);
       } else {
         final montantLigne = d.km * prixParKm;
         sheet.appendRow([
-          TextCellValue(_dateFormat.format(d.date)),
-          TextCellValue(d.raison),
-          TextCellValue(d.type),
-          DoubleCellValue(d.km),
-          DoubleCellValue(prixParKm),
-          DoubleCellValue(montantLigne),
+          _dateFormat.format(d.date),
+          d.raison,
+          d.type,
+          d.km,
+          prixParKm,
+          montantLigne,
         ]);
       }
     }
 
+    // Alignement à droite sur les colonnes numériques (D, E, F)
     final lastRow = sheet.maxRows;
     for (var row = headerRowIndex + 1; row < lastRow; row++) {
       sheet
@@ -448,12 +445,14 @@ class _HomePageState extends State<HomePage> {
           .cellStyle = numberStyle;
     }
 
+    // Sauvegarde
     final dir = await getTemporaryDirectory();
     final filePath = '${dir.path}/deplacements.xlsx';
     final bytes = excel.encode();
     if (bytes == null) return;
     final file = File(filePath);
     await file.writeAsBytes(bytes, flush: true);
+
     await Share.shareXFiles(
       [XFile(filePath)],
       text: 'Liste de mes déplacements et frais',
@@ -465,19 +464,10 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final cfg = widget.config;
     final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            Image.asset(
-              'assets/icons/icon_trajets.png',
-              height: 32,
-              width: 32,
-            ),
-            const SizedBox(width: 8),
-            const Text('Mes déplacements'),
-          ],
-        ),
+        title: const Text('Mes déplacements'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -545,10 +535,10 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           Expanded(
-            child: _filteredItems.isEmpty
+            child: _items.isEmpty
                 ? Center(
                     child: Text(
-                      "Aucun déplacement pour cette année",
+                      "Aucun déplacement pour l'instant",
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -558,98 +548,42 @@ class _HomePageState extends State<HomePage> {
                     itemCount: _filteredItems.length,
                     itemBuilder: (_, index) {
                       final d = _filteredItems[index];
-                      return Dismissible(
-                        key: ValueKey(d),
-                        direction: DismissDirection.horizontal,
-                        background: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerLeft,
-                          padding: const EdgeInsets.only(left: 20),
-                          child: const Icon(Icons.delete, color: Colors.white),
-                        ),
-                        secondaryBackground: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          child: const Icon(Icons.delete, color: Colors.white),
-                        ),
-                        confirmDismiss: (direction) async {
-                          return await showDialog<bool>(
-                                context: context,
-                                builder: (ctx) => AlertDialog(
-                                  title: const Text('Supprimer'),
-                                  content: const Text(
-                                      'Voulez-vous vraiment supprimer cette entrée ?'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.of(ctx).pop(false),
-                                      child: const Text('Annuler'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.of(ctx).pop(true),
-                                      child: const Text('Supprimer'),
-                                    ),
-                                  ],
-                                ),
-                              ) ??
-                              false;
-                        },
-                        onDismissed: (direction) async {
-                          setState(() {
-                            _items.remove(d);
-                          });
-                          await AppStorage.saveDeplacements(_items);
-                        },
-                        child: Card(
-                          child: ListTile(
-                            onLongPress: () => _editDeplacement(d),
-                            leading: CircleAvatar(
-                              backgroundColor: d.type == 'trajet'
-                                  ? scheme.primary
-                                  : scheme.secondary,
-                              foregroundColor: scheme.onPrimary,
-                              child: Text(
-                                d.type == 'trajet'
-                                    ? d.km.toStringAsFixed(0)
-                                    : '€',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                            ),
-                            title: Text(
-                              d.raison,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            subtitle: Text(
-                              '${_dateFormat.format(d.date)} • ${d.type}',
-                            ),
-                            trailing: Text(
+                      return Card(
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: d.type == 'trajet'
+                                ? scheme.primary
+                                : scheme.secondary,
+                            foregroundColor: scheme.onPrimary,
+                            child: Text(
                               d.type == 'trajet'
-                                  ? '${d.km.toStringAsFixed(1)} km'
-                                  : '${d.montant.toStringAsFixed(2)} €',
-                              style: TextStyle(
-                                color: scheme.secondary,
-                                fontWeight: FontWeight.w600,
-                              ),
+                                  ? d.km.toStringAsFixed(0)
+                                  : '€',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          title: Text(
+                            d.raison,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${_dateFormat.format(d.date)} • ${d.type}',
+                          ),
+                          trailing: Text(
+                            d.type == 'trajet'
+                                ? '${d.km.toStringAsFixed(1)} km'
+                                : '${d.montant.toStringAsFixed(2)} €',
+                            style: TextStyle(
+                              color: scheme.secondary,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
                       );
                     },
                   ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
-            child: Text(
-              appVersion,
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            ),
           ),
         ],
       ),

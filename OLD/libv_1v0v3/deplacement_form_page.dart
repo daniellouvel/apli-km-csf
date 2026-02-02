@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 
 import 'main.dart'; // pour Deplacement et TrajetType
 
+const String appVersion = 'V1_0_1';
+
 class DeplacementFormPage extends StatefulWidget {
   final List<TrajetType> trajetsConnus;
   final Deplacement? deplacementInitial; // null = création, non null = édition

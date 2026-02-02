@@ -1,5 +1,3 @@
-// FICHIER : lib/main.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -11,7 +9,7 @@ import 'deplacement_form_page.dart';
 import 'settings_page.dart';
 import 'storage.dart';
 
-const String appVersion = 'V1_0_4';
+const String appVersion = 'V1_0_3';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +21,46 @@ void main() async {
   ));
 }
 
+// ---------- Modèles ----------
+
+class Deplacement {
+  DateTime date;
+  String raison;
+  double km;
+  double montant; // pour les frais
+  String type; // 'trajet' ou 'frais'
+
+  Deplacement({
+    required this.date,
+    required this.raison,
+    this.km = 0.0,
+    this.montant = 0.0,
+    this.type = 'trajet',
+  });
+
+  int get date_year => date.year;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'date': date.toIso8601String(),
+      'raison': raison,
+      'km': km,
+      'montant': montant,
+      'type': type,
+    };
+  }
+
+  factory Deplacement.fromJson(Map<String, dynamic> map) {
+    return Deplacement(
+      date: DateTime.parse(map['date'] as String),
+      raison: map['raison'] as String? ?? '',
+      km: (map['km'] as num?)?.toDouble() ?? 0.0,
+      montant: (map['montant'] as num?)?.toDouble() ?? 0.0,
+      type: map['type'] as String? ?? 'trajet',
+    );
+  }
+}
+
 class TrajetType {
   String raison;
   double kmDefaut;
@@ -30,7 +68,36 @@ class TrajetType {
   TrajetType({required this.raison, required this.kmDefaut});
 }
 
+class UserConfig {
+  String nom;
+  String typeVehicule; // 'thermique' ou 'electrique'
+  double puissance; // CV fiscaux
+
+  UserConfig({
+    required this.nom,
+    required this.typeVehicule,
+    required this.puissance,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'nom': nom,
+      'typeVehicule': typeVehicule,
+      'puissance': puissance,
+    };
+  }
+
+  factory UserConfig.fromJson(Map<String, dynamic> map) {
+    return UserConfig(
+      nom: map['nom'] as String? ?? '',
+      typeVehicule: map['typeVehicule'] as String? ?? 'thermique',
+      puissance: (map['puissance'] as num?)?.toDouble() ?? 0,
+    );
+  }
+}
+
 /// ----- BARÈME KILOMÉTRIQUE 2025 -----
+
 double calculIndemnite({
   required String typeVehicule,
   required double puissance,
@@ -107,13 +174,13 @@ double calculIndemnite({
 
   final table = typeVehicule == 'electrique' ? electrique : thermique;
   final cfg = table[catPuissance]!;
-  Map<String, double> coef;
+  Map coef;
   if (kmAnnuels <= 5000) {
-    coef = Map<String, double>.from(cfg['0-5000']!);
+    coef = cfg['0-5000']!;
   } else if (kmAnnuels <= 20000) {
-    coef = Map<String, double>.from(cfg['5001-20000']!);
+    coef = cfg['5001-20000']!;
   } else {
-    coef = Map<String, double>.from(cfg['20000+']!);
+    coef = cfg['20000+']!;
   }
 
   final a = coef['a']!;
@@ -161,6 +228,7 @@ class _MyAppState extends State<MyApp> {
   @override
   Widget build(BuildContext context) {
     final colorScheme = ColorScheme.fromSeed(seedColor: Colors.teal);
+
     return MaterialApp(
       title: 'Carnet de trajets',
       theme: ThemeData(
@@ -174,6 +242,7 @@ class _MyAppState extends State<MyApp> {
           backgroundColor: colorScheme.secondary,
           foregroundColor: colorScheme.onSecondary,
         ),
+        // ICI : CardThemeData, comme demandé par ton erreur
         cardTheme: const CardThemeData(
           margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         ),
@@ -222,14 +291,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _onDataRestored() async {
-    final newItems = await AppStorage.loadDeplacements();
-    setState(() {
-      _items = newItems;
-      _selectedYear = DateTime.now().year;
-    });
-  }
-
   Future<void> _addDeplacement() async {
     final result = await Navigator.of(context).push<Deplacement?>(
       MaterialPageRoute(
@@ -238,6 +299,7 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+
     if (result != null) {
       setState(() {
         _items.add(result);
@@ -259,6 +321,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> _editDeplacement(Deplacement original) async {
     final index = _items.indexOf(original);
     if (index == -1) return;
+
     final result = await Navigator.of(context).push<Deplacement?>(
       MaterialPageRoute(
         builder: (_) => DeplacementFormPage(
@@ -267,6 +330,7 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
     );
+
     if (result != null) {
       setState(() {
         _items[index] = result;
@@ -292,10 +356,10 @@ class _HomePageState extends State<HomePage> {
           configInitiale: widget.config,
           deplacementsActuels: _items,
           onConfigChange: widget.onEditConfig,
-          onDataRestored: _onDataRestored,
         ),
       ),
     );
+
     if (result != null) {
       widget.onEditConfig(result);
     }
@@ -348,14 +412,17 @@ class _HomePageState extends State<HomePage> {
       bold: true,
       fontSize: 14,
     );
+
     final infoStyle = CellStyle(
       fontSize: 12,
     );
+
     final headerStyle = CellStyle(
       bold: true,
       backgroundColorHex: ExcelColor.fromHexString('FFD9D9D9'),
       horizontalAlign: HorizontalAlign.Center,
     );
+
     final numberStyle = CellStyle(
       fontSize: 12,
       horizontalAlign: HorizontalAlign.Right,
@@ -379,6 +446,7 @@ class _HomePageState extends State<HomePage> {
       'Total à défiscaliser : ${totalGlobal.toStringAsFixed(2)} €',
       'Taux moyen trajet : ${prixParKm.toStringAsFixed(4)} €/km',
     ];
+
     for (var i = 0; i < infos.length; i++) {
       sheet.appendRow([
         TextCellValue(infos[i]),
@@ -403,6 +471,7 @@ class _HomePageState extends State<HomePage> {
       'Montant à défiscaliser',
     ];
     sheet.appendRow(headers.map((h) => TextCellValue(h)).toList());
+
     final headerRowIndex = infos.length + 2;
     for (var col = 0; col < headers.length; col++) {
       sheet
@@ -454,6 +523,7 @@ class _HomePageState extends State<HomePage> {
     if (bytes == null) return;
     final file = File(filePath);
     await file.writeAsBytes(bytes, flush: true);
+
     await Share.shareXFiles(
       [XFile(filePath)],
       text: 'Liste de mes déplacements et frais',
@@ -465,6 +535,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final cfg = widget.config;
     final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: Row(

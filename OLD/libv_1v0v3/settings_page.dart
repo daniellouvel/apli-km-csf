@@ -1,22 +1,24 @@
 // FICHIER : lib/settings_page.dart
 
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
+
+import 'main.dart';
 import 'storage.dart';
-import 'backups_page.dart';
 
 class SettingsPage extends StatefulWidget {
   final UserConfig configInitiale;
-  final List deplacementsActuels;
+  final List<Deplacement> deplacementsActuels;
   final void Function(UserConfig) onConfigChange;
-  final Future<void> Function() onDataRestored;
 
   const SettingsPage({
     super.key,
     required this.configInitiale,
     required this.deplacementsActuels,
     required this.onConfigChange,
-    required this.onDataRestored,
   });
 
   @override
@@ -28,13 +30,18 @@ class _SettingsPageState extends State<SettingsPage> {
 
   late TextEditingController _nomController;
   String _typeVehicule = 'thermique';
-  double _puissance = 0;
+  double _puissance = 0; // valeur stockée (3,4,5,6,7)
+
+  bool _isExporting = false;
+  bool _isImporting = false;
 
   @override
   void initState() {
     super.initState();
     _nomController = TextEditingController(text: widget.configInitiale.nom);
     _typeVehicule = widget.configInitiale.typeVehicule;
+
+    // normalise la puissance existante vers une des valeurs de la liste
     final p = widget.configInitiale.puissance;
     if (p <= 0) {
       _puissance = 0;
@@ -47,7 +54,7 @@ class _SettingsPageState extends State<SettingsPage> {
     } else if (p <= 6) {
       _puissance = 6;
     } else {
-      _puissance = 7;
+      _puissance = 7; // 7 CV et plus
     }
   }
 
@@ -72,23 +79,84 @@ class _SettingsPageState extends State<SettingsPage> {
     Navigator.of(context).pop(cfg);
   }
 
-  Future<void> _openBackupsPage() async {
-    // on ouvre la page de gestion des sauvegardes
-    final restored = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => const BackupsPage(),
-      ),
-    );
+  Future<void> _exportBackup() async {
+    if (_isExporting) return;
+    setState(() => _isExporting = true);
 
-    // si l'utilisateur a restauré une sauvegarde (BackupsPage fait pop(true))
-    if (restored == true) {
-      // recharger la config depuis le stockage
+    try {
+      final cfg = _buildConfig();
+      // Sauvegarde d’abord la config dans le stockage normal
+      await AppStorage.saveConfig(cfg);
+
+      // Fichier de backup complet
+      final file = await AppStorage.exportBackup(
+        config: cfg,
+        deplacements: widget.deplacementsActuels,
+      );
+
+      // Partage du fichier (pour l’envoyer sur Drive, mail, etc.)
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        subject: 'Sauvegarde km_csf',
+        text: 'Fichier de sauvegarde km_csf_backup.json',
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Backup créé : ${file.path}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors de la sauvegarde : $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isExporting = false);
+      }
+    }
+  }
+
+  Future<void> _importBackup() async {
+    if (_isImporting) return;
+    setState(() => _isImporting = true);
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      ); // le picker se rouvre souvent sur le dernier dossier utilisé [web:29][web:32]
+
+      if (result == null || result.files.isEmpty) {
+        return; // annulé
+      }
+
+      final path = result.files.single.path;
+      if (path == null) {
+        throw Exception('Chemin de fichier invalide');
+      }
+
+      final file = File(path);
+      final content = await file.readAsString();
+
+      await AppStorage.importBackupFromJsonString(content);
+
+      // On recharge la config depuis le stockage
       final newCfg = await AppStorage.loadConfig();
       if (newCfg != null) {
         widget.onConfigChange(newCfg);
         setState(() {
           _nomController.text = newCfg.nom;
           _typeVehicule = newCfg.typeVehicule;
+
           final p = newCfg.puissance;
           if (p <= 0) {
             _puissance = 0;
@@ -105,14 +173,29 @@ class _SettingsPageState extends State<SettingsPage> {
           }
         });
       }
-      // recharger la liste des déplacements dans HomePage
-      await widget.onDataRestored();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Données restaurées')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur lors de la restauration : $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isImporting = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Configuration'),
@@ -221,10 +304,12 @@ class _SettingsPageState extends State<SettingsPage> {
                     },
                   ),
                   const SizedBox(height: 24),
+
+                  // Boutons sauvegarde / restauration
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Sauvegardes',
+                      'Sauvegarde',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -235,13 +320,31 @@ class _SettingsPageState extends State<SettingsPage> {
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _isExporting ? null : _exportBackup,
+                      icon: const Icon(Icons.save_alt),
+                      label: Text(
+                        _isExporting
+                            ? 'Sauvegarde en cours...'
+                            : 'Sauvegarder mes données',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: _openBackupsPage,
-                      icon: const Icon(Icons.backup),
-                      label: const Text('Gestion des sauvegardes'),
+                      onPressed: _isImporting ? null : _importBackup,
+                      icon: const Icon(Icons.restore),
+                      label: Text(
+                        _isImporting
+                            ? 'Restauration en cours...'
+                            : 'Restaurer mes données',
+                      ),
                     ),
                   ),
                   const SizedBox(height: 24),
+
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton.icon(

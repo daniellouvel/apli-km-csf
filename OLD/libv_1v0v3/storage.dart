@@ -1,0 +1,210 @@
+// FICHIER : lib/storage.dart
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'main.dart'; // pour Deplacement et UserConfig
+
+class AppStorage {
+  static const _configKey = 'user_config';
+  static const _fileName = 'deplacements.json';
+
+  /// Charge la configuration utilisateur depuis SharedPreferences
+  static Future<UserConfig?> loadConfig() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString(_configKey);
+    if (jsonString == null) return null;
+
+    try {
+      final map = json.decode(jsonString) as Map;
+      return UserConfig(
+        nom: map['nom'] as String? ?? '',
+        typeVehicule: map['typeVehicule'] as String? ?? 'thermique',
+        puissance: (map['puissance'] as num?)?.toDouble() ?? 0,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Sauvegarde la configuration utilisateur
+  static Future<void> saveConfig(UserConfig config) async {
+    final prefs = await SharedPreferences.getInstance();
+    final map = {
+      'nom': config.nom,
+      'typeVehicule': config.typeVehicule,
+      'puissance': config.puissance,
+    };
+    await prefs.setString(_configKey, json.encode(map));
+  }
+
+  /// Retourne le fichier JSON interne qui contient les déplacements
+  static Future<File> _getDeplacementsFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final path = '${dir.path}/$_fileName';
+    return File(path);
+  }
+
+  /// Charge la liste des déplacements depuis le JSON interne
+  static Future<List<Deplacement>> loadDeplacements() async {
+    try {
+      final file = await _getDeplacementsFile();
+      if (!await file.exists()) {
+        return [];
+      }
+
+      final content = await file.readAsString();
+      if (content.trim().isEmpty) return [];
+      final data = json.decode(content);
+      if (data is! List) return [];
+
+      return data.map((e) {
+        final map = e as Map;
+        return Deplacement(
+          date: DateTime.parse(map['date'] as String),
+          raison: map['raison'] as String? ?? '',
+          km: (map['km'] as num?)?.toDouble() ?? 0.0,
+          montant: (map['montant'] as num?)?.toDouble() ?? 0.0,
+          type: map['type'] as String? ?? 'trajet',
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Sauvegarde la liste des déplacements dans le JSON interne
+  static Future<void> saveDeplacements(List<Deplacement> items) async {
+    final file = await _getDeplacementsFile();
+    final data = items.map((d) {
+      return {
+        'date': d.date.toIso8601String(),
+        'raison': d.raison,
+        'km': d.km,
+        'montant': d.montant,
+        'type': d.type,
+      };
+    }).toList();
+    await file.writeAsString(
+      json.encode(data),
+      flush: true,
+    );
+  }
+
+  // ---------- BACKUP COMPLET (config + déplacements) ----------
+
+  Map<String, dynamic> _configToJson(UserConfig? config) {
+    if (config == null) return {};
+    return {
+      'nom': config.nom,
+      'typeVehicule': config.typeVehicule,
+      'puissance': config.puissance,
+    };
+  }
+
+  static Future<Map<String, dynamic>> _buildFullData(
+    UserConfig? config,
+    List<Deplacement> deplacements,
+  ) async {
+    return {
+      'config': config == null
+          ? null
+          : {
+              'nom': config.nom,
+              'typeVehicule': config.typeVehicule,
+              'puissance': config.puissance,
+            },
+      'deplacements': deplacements
+          .map((d) => {
+                'date': d.date.toIso8601String(),
+                'raison': d.raison,
+                'km': d.km,
+                'montant': d.montant,
+                'type': d.type,
+              })
+          .toList(),
+      'version': appVersion,
+      'generatedAt': DateTime.now().toIso8601String(),
+    };
+  }
+
+  /// Exporte un backup JSON complet (config + déplacements) dans un fichier
+  /// dans le répertoire documents de l’app ET renvoie ce fichier pour partage.
+  ///
+  /// L’idée est que le bouton « Sauvegarder mes données » crée le fichier
+  /// puis ouvre la feuille de partage pour que tu le mettes dans Drive, mail, etc. [web:28][web:31]
+  static Future<File> exportBackup({
+    required UserConfig? config,
+    required List<Deplacement> deplacements,
+  }) async {
+    final dir =
+        await getApplicationDocumentsDirectory(); // dossier privé app [web:20]
+    final file = File('${dir.path}/km_csf_backup.json');
+
+    final data = await _buildFullData(config, deplacements);
+    await file.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(data),
+      flush: true,
+    );
+
+    return file;
+  }
+
+  /// Importe un backup JSON complet à partir du contenu du fichier.
+  /// Ne gère que le nouveau format {config: {...}, deplacements: [...]}
+  /// pour éviter les surprises.
+  static Future<void> importBackupFromJsonString(String jsonString) async {
+    Map<String, dynamic> map;
+    try {
+      final decoded = json.decode(jsonString);
+      if (decoded is! Map<String, dynamic>) {
+        return;
+      }
+      map = decoded;
+    } catch (_) {
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+
+    // Config
+    final cfgMap = map['config'];
+    UserConfig? cfg;
+    if (cfgMap is Map) {
+      cfg = UserConfig(
+        nom: cfgMap['nom'] as String? ?? '',
+        typeVehicule: cfgMap['typeVehicule'] as String? ?? 'thermique',
+        puissance: (cfgMap['puissance'] as num?)?.toDouble() ?? 0,
+      );
+      await prefs.setString(
+          _configKey,
+          json.encode({
+            'nom': cfg.nom,
+            'typeVehicule': cfg.typeVehicule,
+            'puissance': cfg.puissance,
+          }));
+    }
+
+    // Déplacements
+    final deps = map['deplacements'];
+    List<Deplacement> deplacements = [];
+    if (deps is List) {
+      deplacements = deps.map((e) {
+        final m = e as Map;
+        return Deplacement(
+          date: DateTime.parse(m['date'] as String),
+          raison: m['raison'] as String? ?? '',
+          km: (m['km'] as num?)?.toDouble() ?? 0.0,
+          montant: (m['montant'] as num?)?.toDouble() ?? 0.0,
+          type: m['type'] as String? ?? 'trajet',
+        );
+      }).toList();
+    }
+
+    // Écrit aussi le fichier interne pour que l’app relise la même chose
+    await saveDeplacements(deplacements);
+  }
+}

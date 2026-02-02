@@ -1,5 +1,3 @@
-// FICHIER : lib/main.dart
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
@@ -10,6 +8,8 @@ import 'dart:io';
 import 'deplacement_form_page.dart';
 import 'settings_page.dart';
 import 'storage.dart';
+
+const String appVersion = 'V1_0_2';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -287,6 +287,37 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _editDeplacement(Deplacement original) async {
+    final index = _items.indexOf(original);
+    if (index == -1) return;
+
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DeplacementFormPage(
+          trajetsConnus: _trajets,
+          deplacementInitial: original,
+        ),
+      ),
+    );
+
+    if (result != null && result is Deplacement) {
+      setState(() {
+        _items[index] = result;
+        if (result.type == 'trajet') {
+          final existeDeja = _trajets.any(
+            (t) => t.raison == result.raison && t.kmDefaut == result.km,
+          );
+          if (!existeDeja) {
+            _trajets.add(
+              TrajetType(raison: result.raison, kmDefaut: result.km),
+            );
+          }
+        }
+      });
+      await AppStorage.saveDeplacements(_items);
+    }
+  }
+
   Future<void> _openSettings() async {
     final result = await Navigator.of(context).push(
       MaterialPageRoute(
@@ -330,9 +361,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _exportAndShareExcel() async {
-    if (_items.isEmpty) return;
-
     final year = _selectedYear;
+    final lignesAnnee = _items.where((item) => item.date_year == year).toList();
+    if (lignesAnnee.isEmpty) return;
+
     final totalKmTrajets = _totalKmForYear(year);
     final indemniteKm = _indemniteForYear(year);
     final totalFrais = _totalFraisForYear(year);
@@ -354,7 +386,7 @@ class _HomePageState extends State<HomePage> {
     );
     final headerStyle = CellStyle(
       bold: true,
-      backgroundColorHex: 'FFD9D9D9',
+      backgroundColorHex: ExcelColor.fromHexString('FFD9D9D9'),
       horizontalAlign: HorizontalAlign.Center,
     );
     final numberStyle = CellStyle(
@@ -363,7 +395,9 @@ class _HomePageState extends State<HomePage> {
     );
 
     // Titre
-    sheet.appendRow(['Carnet de trajets et frais']);
+    sheet.appendRow([
+      TextCellValue('Carnet de trajets et frais'),
+    ]);
     sheet.cell(CellIndex.indexByString('A1')).cellStyle = titleStyle;
 
     // Infos
@@ -379,14 +413,18 @@ class _HomePageState extends State<HomePage> {
       'Taux moyen trajet : ${prixParKm.toStringAsFixed(4)} €/km',
     ];
     for (var i = 0; i < infos.length; i++) {
-      sheet.appendRow([infos[i]]);
+      sheet.appendRow([
+        TextCellValue(infos[i]),
+      ]);
       sheet
           .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: i + 1))
           .cellStyle = infoStyle;
     }
 
     // Ligne vide
-    sheet.appendRow(['']);
+    sheet.appendRow([
+      TextCellValue(''),
+    ]);
 
     // Entête du tableau
     final headers = [
@@ -397,7 +435,9 @@ class _HomePageState extends State<HomePage> {
       'Taux €/km',
       'Montant à défiscaliser',
     ];
-    sheet.appendRow(headers);
+    sheet.appendRow(
+      headers.map((h) => TextCellValue(h)).toList(),
+    );
 
     final headerRowIndex = infos.length + 2;
     for (var col = 0; col < headers.length; col++) {
@@ -407,26 +447,26 @@ class _HomePageState extends State<HomePage> {
           .cellStyle = headerStyle;
     }
 
-    // Données
-    for (final d in _items.where((item) => item.date_year == year)) {
-    if (d.type == 'frais') {
+    // Données (seulement l'année sélectionnée)
+    for (final d in lignesAnnee) {
+      if (d.type == 'frais') {
         sheet.appendRow([
-          _dateFormat.format(d.date),
-          d.raison,
-          d.type,
-          '',
-          '',
-          d.montant,
+          TextCellValue(_dateFormat.format(d.date)),
+          TextCellValue(d.raison),
+          TextCellValue(d.type),
+          TextCellValue(''),
+          TextCellValue(''),
+          DoubleCellValue(d.montant),
         ]);
       } else {
         final montantLigne = d.km * prixParKm;
         sheet.appendRow([
-          _dateFormat.format(d.date),
-          d.raison,
-          d.type,
-          d.km,
-          prixParKm,
-          montantLigne,
+          TextCellValue(_dateFormat.format(d.date)),
+          TextCellValue(d.raison),
+          TextCellValue(d.type),
+          DoubleCellValue(d.km),
+          DoubleCellValue(prixParKm),
+          DoubleCellValue(montantLigne),
         ]);
       }
     }
@@ -467,7 +507,17 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mes déplacements'),
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/icons/icon_trajets.png',
+              height: 32,
+              width: 32,
+            ),
+            const SizedBox(width: 8),
+            const Text('Mes déplacements'),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -535,10 +585,10 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           Expanded(
-            child: _items.isEmpty
+            child: _filteredItems.isEmpty
                 ? Center(
                     child: Text(
-                      "Aucun déplacement pour l'instant",
+                      "Aucun déplacement pour cette année",
                       style: TextStyle(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -546,44 +596,100 @@ class _HomePageState extends State<HomePage> {
                   )
                 : ListView.builder(
                     itemCount: _filteredItems.length,
-            itemBuilder: (_, index) {
-              final d = _filteredItems[index];
-                      return Card(
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            backgroundColor: d.type == 'trajet'
-                                ? scheme.primary
-                                : scheme.secondary,
-                            foregroundColor: scheme.onPrimary,
-                            child: Text(
+                    itemBuilder: (_, index) {
+                      final d = _filteredItems[index];
+                      return Dismissible(
+                        key: ValueKey(d),
+                        direction: DismissDirection.horizontal,
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerLeft,
+                          padding: const EdgeInsets.only(left: 20),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        secondaryBackground: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        confirmDismiss: (direction) async {
+                          return await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text('Supprimer'),
+                                  content: const Text(
+                                      'Voulez-vous vraiment supprimer cette entrée ?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(ctx).pop(false),
+                                      child: const Text('Annuler'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(ctx).pop(true),
+                                      child: const Text('Supprimer'),
+                                    ),
+                                  ],
+                                ),
+                              ) ??
+                              false;
+                        },
+                        onDismissed: (direction) async {
+                          setState(() {
+                            _items.remove(d);
+                          });
+                          await AppStorage.saveDeplacements(_items);
+                        },
+                        child: Card(
+                          child: ListTile(
+                            onLongPress: () => _editDeplacement(d),
+                            leading: CircleAvatar(
+                              backgroundColor: d.type == 'trajet'
+                                  ? scheme.primary
+                                  : scheme.secondary,
+                              foregroundColor: scheme.onPrimary,
+                              child: Text(
+                                d.type == 'trajet'
+                                    ? d.km.toStringAsFixed(0)
+                                    : '€',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                            title: Text(
+                              d.raison,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '${_dateFormat.format(d.date)} • ${d.type}',
+                            ),
+                            trailing: Text(
                               d.type == 'trajet'
-                                  ? d.km.toStringAsFixed(0)
-                                  : '€',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ),
-                          title: Text(
-                            d.raison,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            '${_dateFormat.format(d.date)} • ${d.type}',
-                          ),
-                          trailing: Text(
-                            d.type == 'trajet'
-                                ? '${d.km.toStringAsFixed(1)} km'
-                                : '${d.montant.toStringAsFixed(2)} €',
-                            style: TextStyle(
-                              color: scheme.secondary,
-                              fontWeight: FontWeight.w600,
+                                  ? '${d.km.toStringAsFixed(1)} km'
+                                  : '${d.montant.toStringAsFixed(2)} €',
+                              style: TextStyle(
+                                color: scheme.secondary,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
                       );
                     },
                   ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Text(
+              appVersion,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
           ),
         ],
       ),

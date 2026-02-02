@@ -3,9 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'main.dart'; // pour Deplacement et TrajetType
-
-const String appVersion = 'V1_0_1';
+import 'storage.dart'; // Deplacement
+import 'main.dart'; // TrajetType
 
 class DeplacementFormPage extends StatefulWidget {
   final List<TrajetType> trajetsConnus;
@@ -37,7 +36,6 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
   DateTime _selectedDateFrais = DateTime.now();
 
   final _dateFormat = DateFormat('yyyy-MM-dd');
-
   int _selectedTabIndex = 0; // 0 = Trajet, 1 = Frais
 
   bool get _isEdition => widget.deplacementInitial != null;
@@ -46,11 +44,9 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
   void initState() {
     super.initState();
 
-    // Valeurs par défaut
     _selectedDateTrajet = DateTime.now();
     _selectedDateFrais = DateTime.now();
 
-    // Si on est en édition, pré-remplir les champs
     final dep = widget.deplacementInitial;
     if (dep != null) {
       if (dep.type == 'trajet') {
@@ -67,7 +63,6 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
         _montantControllerFrais.text = dep.montant.toStringAsFixed(2);
       }
     } else {
-      // Création
       _dateControllerTrajet.text = _dateFormat.format(_selectedDateTrajet);
       _dateControllerFrais.text = _dateFormat.format(_selectedDateFrais);
     }
@@ -78,7 +73,6 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
     _dateControllerTrajet.dispose();
     _raisonControllerTrajet.dispose();
     _kmControllerTrajet.dispose();
-
     _dateControllerFrais.dispose();
     _raisonControllerFrais.dispose();
     _montantControllerFrais.dispose();
@@ -117,7 +111,6 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
 
   void _submitTrajet() {
     if (!_formKeyTrajet.currentState!.validate()) return;
-
     final km =
         double.tryParse(_kmControllerTrajet.text.replaceAll(',', '.')) ?? 0.0;
     final dep = Deplacement(
@@ -132,7 +125,6 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
 
   void _submitFrais() {
     if (!_formKeyFrais.currentState!.validate()) return;
-
     final montant =
         double.tryParse(_montantControllerFrais.text.replaceAll(',', '.')) ??
             0.0;
@@ -149,7 +141,6 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEdition ? 'Modifier le mouvement' : 'Nouveau mouvement'),
@@ -242,7 +233,7 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
                       ),
                     )
                     .toList(),
-                onChanged: (value) {
+                onChanged: (TrajetType? value) {
                   if (value == null) return;
                   _raisonControllerTrajet.text = value.raison;
                   _kmControllerTrajet.text = value.kmDefaut.toStringAsFixed(2);
@@ -289,9 +280,11 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
               width: double.infinity,
               child: FilledButton.icon(
                 icon: const Icon(Icons.check),
-                label: Text(_isEdition
-                    ? 'Mettre à jour le trajet'
-                    : 'Enregistrer le trajet'),
+                label: Text(
+                  _isEdition
+                      ? 'Mettre à jour le trajet'
+                      : 'Enregistrer le trajet',
+                ),
                 onPressed: _submitTrajet,
               ),
             ),
@@ -305,7 +298,6 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
 
   Widget _buildFraisForm(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-
     return SingleChildScrollView(
       key: const ValueKey('frais'),
       padding: const EdgeInsets.all(16),
@@ -372,9 +364,11 @@ class _DeplacementFormPageState extends State<DeplacementFormPage> {
               width: double.infinity,
               child: FilledButton.icon(
                 icon: const Icon(Icons.check),
-                label: Text(_isEdition
-                    ? 'Mettre à jour le frais'
-                    : 'Enregistrer le frais'),
+                label: Text(
+                  _isEdition
+                      ? 'Mettre à jour le frais'
+                      : 'Enregistrer le frais',
+                ),
                 onPressed: _submitFrais,
               ),
             ),
