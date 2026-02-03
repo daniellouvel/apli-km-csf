@@ -1,41 +1,10 @@
-// FICHIER : lib/storage.dart
-
 import 'dart:convert';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-// --- NOUVELLE CLASSE BAREME ---
-class BaremeCustom {
-  double coef1;
-  double coef2;
-  double fixe2;
-  double coef3;
-
-  BaremeCustom({
-    required this.coef1,
-    required this.coef2,
-    required this.fixe2,
-    required this.coef3,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'coef1': coef1,
-        'coef2': coef2,
-        'fixe2': fixe2,
-        'coef3': coef3,
-      };
-
-  factory BaremeCustom.fromJson(Map<String, dynamic> map) => BaremeCustom(
-        coef1: (map['coef1'] as num).toDouble(),
-        coef2: (map['coef2'] as num).toDouble(),
-        fixe2: (map['fixe2'] as num).toDouble(),
-        coef3: (map['coef3'] as num).toDouble(),
-      );
-}
-
-// --- LES CLASSES DE DONNÉES ---
+// --- LES CLASSES DE DONNÉES (DOIVENT ÊTRE ICI) ---
 class Deplacement {
   DateTime date;
   String raison;
@@ -50,7 +19,7 @@ class Deplacement {
       this.montant = 0.0,
       this.type = 'trajet'});
 
-  int get date_year => date.year;
+  int get date_year => date.year; // Indispensable pour ton main.dart
 
   Map<String, dynamic> toJson() => {
         'date': date.toIso8601String(),
@@ -71,35 +40,16 @@ class Deplacement {
 
 class UserConfig {
   String nom;
-  String adresse; // AJOUTÉ
   String typeVehicule;
   double puissance;
-  BaremeCustom? baremeCustom;
-
-  UserConfig({
-    required this.nom,
-    this.adresse = '', // AJOUTÉ
-    required this.typeVehicule,
-    required this.puissance,
-    this.baremeCustom,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'nom': nom,
-        'adresse': adresse, // AJOUTÉ
-        'typeVehicule': typeVehicule,
-        'puissance': puissance,
-        'baremeCustom': baremeCustom?.toJson(),
-      };
-
+  UserConfig(
+      {required this.nom, required this.typeVehicule, required this.puissance});
+  Map<String, dynamic> toJson() =>
+      {'nom': nom, 'typeVehicule': typeVehicule, 'puissance': puissance};
   factory UserConfig.fromJson(Map<String, dynamic> map) => UserConfig(
         nom: map['nom'] as String? ?? '',
-        adresse: map['adresse'] as String? ?? '', // AJOUTÉ
         typeVehicule: map['typeVehicule'] as String? ?? 'thermique',
         puissance: (map['puissance'] as num?)?.toDouble() ?? 0,
-        baremeCustom: map['baremeCustom'] != null
-            ? BaremeCustom.fromJson(map['baremeCustom'])
-            : null,
       );
 }
 
@@ -148,11 +98,12 @@ class AppStorage {
         flush: true);
   }
 
-  // Logique de Sauvegarde Externe
+  // Logique de Sauvegarde Externe (Refonte)
   static Future<bool> requestPermissions() async {
     if (Platform.isAndroid) {
       var status = await Permission.manageExternalStorage.request();
       if (status.isGranted) return true;
+      // Si refusé via manageExternalStorage, on tente le stockage simple (Android < 11)
       status = await Permission.storage.request();
       return status.isGranted;
     }

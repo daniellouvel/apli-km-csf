@@ -6,9 +6,9 @@ import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
-import '../lib/deplacement_form_page.dart';
-import '../lib/settings_page.dart';
-import '../lib/storage.dart';
+import 'libv1_0_4/deplacement_form_page.dart';
+import 'libv1_0_4/settings_page.dart';
+import 'libv1_0_4/storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

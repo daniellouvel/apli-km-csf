@@ -30,6 +30,7 @@ class TrajetType {
   TrajetType({required this.raison, required this.kmDefaut});
 }
 
+/// ----- CALCUL DES INDEMNITÉS -----
 double calculIndemnite({
   required UserConfig config,
   required double kmAnnuels,
@@ -202,8 +203,9 @@ class _HomePageState extends State<HomePage> {
         content: Text('Voulez-vous supprimer le mouvement :\n"${d.raison}" ?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('ANNULER')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('ANNULER'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('SUPPRIMER',
@@ -213,6 +215,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+
     if (confirm == true) {
       setState(() {
         _items.remove(d);
@@ -255,6 +258,7 @@ class _HomePageState extends State<HomePage> {
 
     final excel = Excel.createExcel();
     final sheet = excel[excel.getDefaultSheet()!]!;
+
     sheet.appendRow([TextCellValue('Export : ${widget.config.nom}')]);
     sheet.appendRow([TextCellValue('Adresse : ${widget.config.adresse}')]);
     sheet.appendRow([TextCellValue('Année : $year')]);
@@ -322,21 +326,10 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Utilisateur : ${widget.config.nom}',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      // --- POSITION DE LA VERSION RÉTABLIE ICI ---
-                      Text(appVersion,
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: scheme.primary.withOpacity(0.5))),
-                    ],
-                  ),
+                  Text('Utilisateur : ${widget.config.nom}',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
                   if (widget.config.adresse.isNotEmpty)
-                    Text('Adresse : ${widget.config.adresse}',
-                        style: const TextStyle(fontSize: 12)),
+                    Text('Adresse : ${widget.config.adresse}'),
                 ],
               ),
             ),
@@ -387,7 +380,7 @@ class _HomePageState extends State<HomePage> {
                             color: Colors.white,
                             size: 20),
                       ),
-                      // --- CORRECTION COMPILATION : d.raison ---
+                      // --- LIGNE 302 : VERIFIE BIEN 'raison' CI-DESSOUS ---
                       title: Text(d.raison,
                           style: const TextStyle(fontWeight: FontWeight.bold)),
                       subtitle: Text(_dateFormat.format(d.date)),
