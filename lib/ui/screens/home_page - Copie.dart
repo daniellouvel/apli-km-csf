@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
-// Utilisation d'imports absolus pour éviter les erreurs de définition
-import 'package:km_csf/models.dart';
-import 'package:km_csf/logic/calculator.dart';
-import 'package:km_csf/services/storage.dart';
-import 'package:km_csf/ui/widgets/user_header.dart';
-import 'package:km_csf/ui/widgets/deplacement_card.dart';
-import 'package:km_csf/ui/screens/settings_page.dart';
-import 'package:km_csf/ui/screens/deplacement_form_page.dart';
-import 'package:km_csf/ui/screens/export_choice_page.dart';
-import 'package:km_csf/ui/screens/help_page.dart';
+import '../../models.dart';
+import '../../logic/calculator.dart';
+import '../../services/storage.dart';
+import '../widgets/user_header.dart';
+import '../widgets/deplacement_card.dart';
+import 'settings_page.dart';
+import 'deplacement_form_page.dart';
+import 'export_choice_page.dart';
+import 'help_page.dart';
 
 class HomePage extends StatefulWidget {
   final UserConfig config;
@@ -66,10 +65,10 @@ class _HomePageState extends State<HomePage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline),
+            tooltip: 'Aide d\'utilisation',
             onPressed: () => Navigator.push(
               context,
-              // CORRECTION : Suppression du 'const' qui causait l'erreur
-              MaterialPageRoute(builder: (_) => HelpPage()),
+              MaterialPageRoute(builder: (_) => const HelpPage()),
             ),
           ),
           IconButton(
@@ -110,20 +109,23 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
+      // Utilisation du Stack pour superposer le logo et le contenu
       body: Stack(
         children: [
-          // Logo en filigrane au centre
+          // 1. LE LOGO EN FILIGRANE (FOND)
           Center(
             child: Opacity(
-              opacity: 0.50,
+              opacity: 0.1, // Logo très léger pour ne pas gêner la lecture
               child: Image.asset(
                 'assets/images/logo_csf.png',
-                width: MediaQuery.of(context).size.width * 0.75,
+                width: MediaQuery.of(context).size.width *
+                    0.7, // 70% de la largeur
                 fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) => const SizedBox(),
               ),
             ),
           ),
+
+          // 2. LE CONTENU (PAR-DESSUS)
           Column(
             children: [
               UserHeader(config: widget.config, version: widget.appVersion),
@@ -158,15 +160,37 @@ class _HomePageState extends State<HomePage> {
                 child: filteredItems.isEmpty
                     ? const Center(child: Text("Aucun mouvement enregistré"))
                     : ListView.builder(
-                        // CORRECTION : paramètre 'backgroundColor' supprimé
+                        backgroundColor: Colors.transparent, // Fond invisible
                         itemCount: filteredItems.length,
                         itemBuilder: (ctx, i) {
                           final item = filteredItems[i];
                           return DeplacementCard(
                             item: item,
                             onDelete: () async {
-                              setState(() => _items.remove(item));
-                              AppStorage.saveDeplacements(_items);
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  title: const Text("Supprimer ?"),
+                                  content: const Text(
+                                      "Voulez-vous vraiment effacer cette ligne ?"),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, false),
+                                        child: const Text("ANNULER")),
+                                    TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(ctx, true),
+                                        child: const Text("EFFACER",
+                                            style:
+                                                TextStyle(color: Colors.red))),
+                                  ],
+                                ),
+                              );
+                              if (confirm == true) {
+                                setState(() => _items.remove(item));
+                                AppStorage.saveDeplacements(_items);
+                              }
                             },
                             onLongPress: () async {
                               final res = await Navigator.push(
@@ -175,10 +199,10 @@ class _HomePageState extends State<HomePage> {
                                     builder: (_) =>
                                         DeplacementFormPage(itemToEdit: item)),
                               );
-                              if (res != null) {
+                              if (res != null && res is Deplacement) {
                                 setState(() {
-                                  final idx = _items.indexOf(item);
-                                  _items[idx] = res;
+                                  final index = _items.indexOf(item);
+                                  _items[index] = res;
                                   _sortItems();
                                 });
                                 AppStorage.saveDeplacements(_items);
@@ -196,8 +220,7 @@ class _HomePageState extends State<HomePage> {
         onPressed: () async {
           final res = await Navigator.push(
             context,
-            // CORRECTION : Pas de 'const' ici non plus
-            MaterialPageRoute(builder: (_) => DeplacementFormPage()),
+            MaterialPageRoute(builder: (_) => const DeplacementFormPage()),
           );
           if (res != null && res is Deplacement) {
             setState(() {
