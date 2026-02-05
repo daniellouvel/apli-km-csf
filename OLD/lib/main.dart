@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; // 1. Importation nécessaire
 import 'models.dart';
 import 'logic/calculator.dart';
 import 'services/storage.dart';
@@ -8,7 +7,7 @@ import 'ui/widgets/deplacement_card.dart';
 import 'ui/screens/settings_page.dart';
 import 'ui/screens/deplacement_form_page.dart';
 import 'ui/screens/export_choice_page.dart';
-import 'ui/screens/help_page.dart';
+import 'ui/screens/help_page.dart'; // Import de la nouvelle page d'aide
 
 const String appVersion = 'V1.1.5';
 
@@ -57,17 +56,6 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'KM CSF',
-      // --- AJOUT DE LA TRADUCTION ICI ---
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: const [
-        Locale('fr', 'FR'), // Français
-      ],
-      locale: const Locale('fr', 'FR'), // Force la langue de l'app en français
-      // ----------------------------------
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         useMaterial3: true,
@@ -88,7 +76,6 @@ class _MyAppState extends State<MyApp> {
   }
 }
 
-// ... Le reste de ta classe HomePage reste identique
 class HomePage extends StatefulWidget {
   final UserConfig config;
   final List<Deplacement> initialItems;
@@ -141,6 +128,7 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Mon Journal de Frais'),
         actions: [
+          // --- BOUTON AIDE AJOUTÉ ICI ---
           IconButton(
             icon: const Icon(Icons.help_outline),
             tooltip: 'Aide d\'utilisation',
