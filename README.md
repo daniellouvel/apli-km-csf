@@ -1,16 +1,45 @@
-# carnet_trajets
+# KM CSF - Carnet de Trajets
 
-A new Flutter project.
+Application Flutter pour la gestion des trajets kilom&eacute;triques.
 
-## Getting Started
+## Compilation de l'APK
 
-This project is a starting point for a Flutter application.
+### Pr&eacute;requis
 
-A few resources to get you started if this is your first Flutter project:
+- Flutter SDK (>=3.0.0)
+- Android SDK
+- Java 17
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+### Compiler l'APK release
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter build apk --release
+```
+
+L'APK g&eacute;n&eacute;r&eacute; se trouve dans :
+
+```
+build/app/outputs/apk/release/KM_CSF-<version>.apk
+```
+
+Le nom du fichier inclut automatiquement la version d&eacute;finie dans `pubspec.yaml` (ex: `KM_CSF-1.1.0.apk`).
+
+### Changer la version
+
+Modifier la ligne `version` dans `pubspec.yaml` :
+
+```yaml
+version: 1.1.0+0
+#         ^^^^^  = versionName (affich&eacute;e)
+#               ^ = versionCode (num&eacute;ro interne, &agrave; incr&eacute;menter &agrave; chaque publication)
+```
+
+### Installer sur un t&eacute;l&eacute;phone
+
+Par USB avec un appareil connect&eacute; :
+
+```bash
+flutter install
+```
+
+Ou transf&eacute;rer le fichier `KM_CSF-<version>.apk` sur le t&eacute;l&eacute;phone et l'ouvrir.
